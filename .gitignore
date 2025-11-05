@@ -1,0 +1,7 @@
+# 忽略 Go 的编译二进制文件
+
+# 忽略依赖包目录 (如果你使用 go mod vendor)
+vendor/
+
+# 忽略 Goland 的配置目录
+.idea/
