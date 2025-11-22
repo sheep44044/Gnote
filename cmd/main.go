@@ -6,7 +6,7 @@ import (
 	"note/internal/handlers"
 	"note/internal/middleware"
 	"note/internal/models"
-	"note/internal/redis"
+	"note/internal/redis1"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
@@ -20,7 +20,7 @@ func main() {
 	}
 
 	// 初始化Redis
-	if err := redis.Init(cfg); err != nil {
+	if err := redis1.Init(cfg); err != nil {
 		slog.Warn("Redis connection failed, continuing without Redis", "error", err)
 	} else {
 		slog.Info("Redis connected successfully")
