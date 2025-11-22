@@ -6,6 +6,7 @@ import (
 	"note/internal/models"
 	"note/internal/utils"
 	"note/internal/validators"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -62,6 +63,11 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, _ := utils.GenerateToken(h.cfg, string(rune(user.ID)), user.Username)
+	userIDStr := strconv.FormatUint(uint64(user.ID), 10)
+	token, err := utils.GenerateToken(h.cfg, userIDStr, user.Username)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "failed to generate token")
+		return
+	}
 	utils.Success(c, gin.H{"token": token})
 }
