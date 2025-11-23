@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"note/internal/models"
+	"note/internal/redis1"
 	"note/internal/utils"
 	"note/internal/validators"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -21,13 +25,45 @@ func NewNoteHandler(db *gorm.DB) *NoteHandler {
 }
 
 func (h *NoteHandler) GetNotes(c *gin.Context) {
+	// 1. 先尝试从缓存获取
+	cacheKey := "notes:all"
+	cachedNotes, err := redis1.Get(cacheKey)
+	if err == nil {
+		var notes []models.Note
+		if err := json.Unmarshal([]byte(cachedNotes), &notes); err == nil {
+			slog.Debug("Notes retrieved from cache", "key", cacheKey)
+			utils.Success(c, notes)
+			return
+		}
+	}
+
 	var notes []models.Note
-	h.db.Preload("Tags").Find(&notes) // 添加预加载
+	if err := h.db.Preload("Tags").Find(&notes).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	// 3. 将结果存入缓存
+	notesJSON, _ := json.Marshal(notes)
+	redis1.Set(cacheKey, string(notesJSON), 10*time.Minute) // 10分钟TTL
+
 	utils.Success(c, notes)
 }
 
 func (h *NoteHandler) GetNote(c *gin.Context) {
 	id := c.Param("id")
+	cacheKey := "note:" + id
+
+	cachedNote, err := redis1.Get(cacheKey)
+	if err == nil {
+		var note models.Note
+		if err := json.Unmarshal([]byte(cachedNote), &note); err == nil {
+			slog.Debug("Notes retrieved from cache", "key", cacheKey)
+			utils.Success(c, note)
+			return
+		}
+	}
+
 	var note models.Note
 	if err := h.db.Preload("Tags").Where("id = ?", id).First(&note).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -37,6 +73,10 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 		}
 		return
 	}
+
+	noteJSON, _ := json.Marshal(note)
+	redis1.Set(cacheKey, string(noteJSON), 10*time.Minute)
+
 	utils.Success(c, note)
 }
 
@@ -93,6 +133,15 @@ func (h *NoteHandler) UpdateNote(c *gin.Context) {
 	h.db.Model(&note).Association("Tags").Replace(tags)
 
 	h.db.Preload("Tags").First(&note, note.ID)
+
+	// 更新成功后，清理相关缓存
+	cacheKeyNote := "note:" + id
+	cacheKeyAllNotes := "notes:all"
+
+	redis1.Del(cacheKeyNote)
+	redis1.Del(cacheKeyAllNotes)
+	slog.Info("Cache cleared for updated note", "note_id", id)
+
 	utils.Success(c, note)
 }
 

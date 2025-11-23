@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"note/internal/models"
+	"note/internal/redis1"
 	"note/internal/utils"
 	"note/internal/validators"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -21,13 +25,40 @@ func NewNoteTag(db *gorm.DB) *NoteTag {
 }
 
 func (h *NoteTag) GetTags(c *gin.Context) {
+	cacheKey := "tags:all"
+	cachedTags, err := redis1.Get(cacheKey)
+	if err == nil {
+		var tags []models.Tag
+		if err := json.Unmarshal([]byte(cachedTags), &tags); err == nil {
+			slog.Debug("Tags retrieved from cache", "key", cacheKey)
+			utils.Success(c, tags)
+			return
+		}
+	}
+
 	var tags []models.Tag
 	h.db.Find(&tags)
+
+	tagsJSON, _ := json.Marshal(tags)
+	redis1.Set(cacheKey, string(tagsJSON), 10*time.Minute) // 10分钟TTL
+
 	utils.Success(c, tags)
 }
 
 func (h *NoteTag) GetTag(c *gin.Context) {
 	id := c.Param("id")
+	cacheKey := "tag:" + id
+
+	cachedTag, err := redis1.Get(cacheKey)
+	if err == nil {
+		var tag models.Tag
+		if err := json.Unmarshal([]byte(cachedTag), &tag); err == nil {
+			slog.Debug("Tags retrieved from cache", "key", cacheKey)
+			utils.Success(c, tag)
+			return
+		}
+	}
+
 	var tag models.Tag
 	if err := h.db.Where("id = ?", id).First(&tag).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -37,6 +68,10 @@ func (h *NoteTag) GetTag(c *gin.Context) {
 		}
 		return
 	}
+
+	tagJSON, _ := json.Marshal(tag)
+	redis1.Set(cacheKey, string(tagJSON), 10*time.Minute) // 10分钟TTL
+
 	utils.Success(c, tag)
 }
 
@@ -76,6 +111,15 @@ func (h *NoteTag) UpdateTag(c *gin.Context) {
 		Name:  req.Name,
 		Color: req.Color,
 	})
+
+	// 更新成功后，清理相关缓存
+	cacheKeyTag := "tag:" + id
+	cacheKeyAllTags := "tags:all"
+
+	redis1.Del(cacheKeyTag)
+	redis1.Del(cacheKeyAllTags)
+	slog.Info("Cache cleared for updated note", "note_id", id)
+
 	utils.Success(c, tag)
 }
 
