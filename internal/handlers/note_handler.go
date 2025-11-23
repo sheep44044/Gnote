@@ -99,6 +99,10 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 	}
 
 	h.db.Create(&note)
+
+	cacheKeyAllNotes := "notes:all"
+	redis1.Del(cacheKeyAllNotes)
+
 	utils.Success(c, note)
 }
 
@@ -158,5 +162,12 @@ func (h *NoteHandler) DeleteNote(c *gin.Context) {
 		return
 	}
 
+	cacheKeyNote := "note:" + c.Param("id")
+	cacheKeyAllNotes := "notes:all"
+
+	redis1.Del(cacheKeyNote)
+	redis1.Del(cacheKeyAllNotes)
+
+	slog.Info("Cache cleared for deleted note", "note_id", id)
 	utils.Success(c, gin.H{"message": "deleted"})
 }

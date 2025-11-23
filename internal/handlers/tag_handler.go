@@ -87,6 +87,10 @@ func (h *NoteTag) CreateTag(c *gin.Context) {
 		Color: req.Color,
 	}
 	h.db.Create(&tag)
+
+	cacheKeyAllTags := "Tags:all"
+	redis1.Del(cacheKeyAllTags)
+
 	utils.Success(c, tag)
 }
 
@@ -135,5 +139,13 @@ func (h *NoteTag) DeleteTag(c *gin.Context) {
 		utils.Error(c, http.StatusNotFound, "tag not found")
 		return
 	}
+
+	cacheKeyTag := "tag:" + c.Param("id")
+	cacheKeyAllTags := "tags:all"
+
+	redis1.Del(cacheKeyTag)
+	redis1.Del(cacheKeyAllTags)
+
+	slog.Info("Tag and related caches cleared", "tag_id", id)
 	utils.Success(c, gin.H{"message": "deleted"})
 }
