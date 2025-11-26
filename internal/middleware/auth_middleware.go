@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"note/config"
 	"note/internal/utils"
@@ -29,7 +30,15 @@ func JWTAuthMiddleware(cfg *config.Config, redisClient *redis.Client) gin.Handle
 		}
 		tokenString := parts[1]
 
-		if utils.IsTokenBlacklisted(redisClient, tokenString) {
+		isBlacklisted, redisErr := utils.IsTokenBlacklisted(redisClient, tokenString)
+
+		if redisErr != nil {
+			// 💡 降级策略：Redis不可用时，跳过黑名单检查，只验证token签名
+			slog.Warn("Redis unavailable, skipping blacklist check",
+				"error", redisErr,
+				"token", utils.GetTokenHash(tokenString))
+
+		} else if isBlacklisted {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token has been revoked"})
 			return
 		}

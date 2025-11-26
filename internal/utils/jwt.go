@@ -2,6 +2,8 @@ package utils
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"math/rand"
 	"note/config"
 	"strconv"
@@ -30,23 +32,42 @@ func GenerateToken(cfg *config.Config, userID string, username string) (string, 
 }
 
 // 检查token是否在黑名单中
-func IsTokenBlacklisted(redisClient *redis.Client, tokenString string) bool {
+func IsTokenBlacklisted(redisClient *redis.Client, tokenString string) (bool, error) {
 	// 先简单解析token获取jti，不验证签名（因为要先检查黑名单）
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
-		return false
+		return false, nil
 	}
 
 	// 只解析claims部分
 	claims := jwt.MapClaims{}
 	_, _, _ = jwt.NewParser().ParseUnverified(tokenString, claims)
 
-	if jti, ok := claims["jti"].(float64); ok {
-		key := "blacklist:" + strconv.FormatInt(int64(jti), 10)
-		_, err := redisClient.Get(context.Background(), key).Result()
-		return err == nil // 存在即被加入黑名单
+	// 3. 安全提取 jti（兼容 string 和 float64）
+	var jtiStr string
+	if jti, ok := claims["jti"].(string); ok {
+		jtiStr = jti
+	} else if jti, ok := claims["jti"].(float64); ok {
+		jtiStr = strconv.FormatInt(int64(jti), 10)
+	} else {
+		// 没有 jti 或类型不对，无法加入黑名单
+		return false, nil
 	}
-	return false
+
+	// 4. 查询 Redis 黑名单
+	key := "blacklist:" + jtiStr
+	_, err := redisClient.Get(context.Background(), key).Result()
+
+	if err == redis.Nil {
+		// 不在黑名单中
+		return false, nil
+	}
+	if err != nil {
+		// 🔥 Redis 出错了！返回错误，由调用方决定是否降级
+		return false, fmt.Errorf("redis error checking blacklist: %w", err)
+	}
+	// 存在即被拉黑
+	return true, nil
 }
 
 // 将token加入黑名单
@@ -79,4 +100,12 @@ func ExtractClaims(token *jwt.Token) (jwt.MapClaims, error) {
 		return nil, jwt.ErrTokenInvalidClaims
 	}
 	return claims, nil
+}
+
+func GetTokenHash(token string) string {
+	if token == "" {
+		return "empty"
+	}
+	hash := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", hash[:8]) // 取前8字节（16字符）足够区分，又不冗长
 }
