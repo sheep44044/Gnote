@@ -10,10 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/redis/go-redis/v9"
 )
 
-func JWTAuthMiddleware(cfg *config.Config, redisClient *redis.Client) gin.HandlerFunc {
+func JWTAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -30,7 +29,7 @@ func JWTAuthMiddleware(cfg *config.Config, redisClient *redis.Client) gin.Handle
 		}
 		tokenString := parts[1]
 
-		isBlacklisted, redisErr := utils.IsTokenBlacklisted(redisClient, tokenString)
+		isBlacklisted, redisErr := utils.IsTokenBlacklisted(tokenString)
 
 		if redisErr != nil {
 			// 💡 降级策略：Redis不可用时，跳过黑名单检查，只验证token签名

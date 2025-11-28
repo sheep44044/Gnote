@@ -1,12 +1,12 @@
 package utils
 
 import (
-	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"math/rand"
 	"note/config"
-	"strconv"
+	"note/internal/redis1"
 	"strings"
 	"time"
 
@@ -31,8 +31,7 @@ func GenerateToken(cfg *config.Config, userID string, username string) (string, 
 	return token.SignedString([]byte(cfg.JWTSecretKey))
 }
 
-// 检查token是否在黑名单中
-func IsTokenBlacklisted(redisClient *redis.Client, tokenString string) (bool, error) {
+func IsTokenBlacklisted(tokenString string) (bool, error) {
 	// 先简单解析token获取jti，不验证签名（因为要先检查黑名单）
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
@@ -41,14 +40,14 @@ func IsTokenBlacklisted(redisClient *redis.Client, tokenString string) (bool, er
 
 	// 只解析claims部分
 	claims := jwt.MapClaims{}
-	_, _, _ = jwt.NewParser().ParseUnverified(tokenString, claims)
+	_, _, _ = jwt.NewParser().ParseUnverified(tokenString, claims) //三个返回值是完整的token、[]string分开的token和err
 
 	// 3. 安全提取 jti（兼容 string 和 float64）
 	var jtiStr string
 	if jti, ok := claims["jti"].(string); ok {
 		jtiStr = jti
 	} else if jti, ok := claims["jti"].(float64); ok {
-		jtiStr = strconv.FormatInt(int64(jti), 10)
+		jtiStr = fmt.Sprintf("%d", int64(jti))
 	} else {
 		// 没有 jti 或类型不对，无法加入黑名单
 		return false, nil
@@ -56,22 +55,21 @@ func IsTokenBlacklisted(redisClient *redis.Client, tokenString string) (bool, er
 
 	// 4. 查询 Redis 黑名单
 	key := "blacklist:" + jtiStr
-	_, err := redisClient.Get(context.Background(), key).Result()
-
-	if err == redis.Nil {
-		// 不在黑名单中
+	_, err := redis1.Get(key)
+	// 不在黑名单中
+	if errors.Is(err, redis.Nil) {
 		return false, nil
 	}
+
 	if err != nil {
-		// 🔥 Redis 出错了！返回错误，由调用方决定是否降级
+		//  Redis 出错了！返回错误，由调用方决定是否降级
 		return false, fmt.Errorf("redis error checking blacklist: %w", err)
 	}
-	// 存在即被拉黑
+
 	return true, nil
 }
 
-// 将token加入黑名单
-func AddTokenToBlacklist(redisClient *redis.Client, tokenString string, expiration time.Duration) error {
+func AddTokenToBlacklist(tokenString string, expiration time.Duration) error {
 	claims := jwt.MapClaims{}
 	_, _, err := jwt.NewParser().ParseUnverified(tokenString, claims)
 	if err != nil {
@@ -79,8 +77,8 @@ func AddTokenToBlacklist(redisClient *redis.Client, tokenString string, expirati
 	}
 
 	if jti, ok := claims["jti"].(float64); ok {
-		key := "blacklist:" + strconv.FormatInt(int64(jti), 10)
-		return redisClient.Set(context.Background(), key, "1", expiration).Err()
+		key := "blacklist:" + fmt.Sprintf("%d", int64(jti))
+		return redis1.Set(key, "1", expiration)
 	}
 	return nil
 }
