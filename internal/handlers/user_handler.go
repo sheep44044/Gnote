@@ -125,7 +125,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	expiration := h.cfg.JWTExpirationTime
 
 	// 加入黑名单
-	err := utils.AddTokenToBlacklist(h.rdb, tokenString, expiration)
+	err := utils.AddTokenToBlacklist(tokenString, expiration)
 	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "failed to logout")
 		return
