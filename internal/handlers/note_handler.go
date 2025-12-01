@@ -51,6 +51,12 @@ func (h *NoteHandler) GetNotes(c *gin.Context) {
 }
 
 func (h *NoteHandler) GetNote(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		utils.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
 	id := c.Param("id")
 	cacheKey := "note:" + id
 
@@ -59,6 +65,9 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 		var note models.Note
 		if err := json.Unmarshal([]byte(cachedNote), &note); err == nil {
 			slog.Debug("Notes retrieved from cache", "key", cacheKey)
+
+			h.recordNoteView(userID, id)
+
 			utils.Success(c, note)
 			return
 		}
@@ -76,6 +85,8 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 
 	noteJSON, _ := json.Marshal(note)
 	redis1.SetWithRandomTTL(cacheKey, string(noteJSON), 10*time.Minute)
+
+	h.recordNoteView(userID, id)
 
 	utils.Success(c, note)
 }
