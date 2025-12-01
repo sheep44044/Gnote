@@ -83,6 +83,10 @@ func ZRem(key string, members ...interface{}) (int64, error) {
 	return Rdb.ZRem(ctx, key, members...).Result()
 }
 
+func ZRevRange(key string, start, stop int64) ([]string, error) {
+	return Rdb.ZRevRange(ctx, key, start, stop).Result()
+}
+
 func Expire(key string, expiration time.Duration) (bool, error) {
 	return Rdb.Expire(ctx, key, expiration).Result()
 }
