@@ -1,4 +1,4 @@
-package handlers
+package note
 
 import (
 	"note/internal/redis1"

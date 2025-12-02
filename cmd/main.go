@@ -3,10 +3,12 @@ package main
 import (
 	"log/slog"
 	"note/config"
-	"note/internal/handlers"
 	"note/internal/middleware"
 	"note/internal/models"
+	"note/internal/note"
 	"note/internal/redis1"
+	"note/internal/tag"
+	"note/internal/user"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
@@ -43,7 +45,7 @@ func main() {
 	r.Use(middleware.LoggerMiddleware())
 
 	// 公开路由：用户注册/登录
-	userHandler := handlers.NewUserHandler(db, cfg, redis1.Rdb)
+	userHandler := user.NewUserHandler(db, cfg, redis1.Rdb)
 	r.POST("/register", userHandler.Register)
 	r.POST("/login", userHandler.Login)
 
@@ -53,7 +55,7 @@ func main() {
 	{
 		auth.POST("/logout", userHandler.Logout)
 
-		noteHandler := handlers.NewNoteHandler(db)
+		noteHandler := note.NewNoteHandler(db)
 		notes := auth.Group("/notes")
 		{
 			notes.GET("", noteHandler.GetNotes)
@@ -65,7 +67,7 @@ func main() {
 			notes.GET("/recent", noteHandler.GetRecentNotes)
 		}
 
-		tagHandler := handlers.NewNoteTag(db)
+		tagHandler := tag.NewNoteTag(db)
 		tags := auth.Group("/tags")
 		{
 			tags.GET("", tagHandler.GetTags)
