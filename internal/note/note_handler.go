@@ -104,9 +104,10 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 	}
 
 	note := models.Note{
-		Title:   req.Title,
-		Content: req.Content,
-		Tags:    tags,
+		Title:     req.Title,
+		Content:   req.Content,
+		Tags:      tags,
+		IsPrivate: req.IsPrivate,
 	}
 
 	h.db.Create(&note)
@@ -137,8 +138,9 @@ func (h *NoteHandler) UpdateNote(c *gin.Context) {
 	}
 
 	h.db.Model(&note).Updates(models.Note{
-		Title:   req.Title,
-		Content: req.Content,
+		Title:     req.Title,
+		Content:   req.Content,
+		IsPrivate: req.IsPrivate,
 	})
 
 	var tags []models.Tag
