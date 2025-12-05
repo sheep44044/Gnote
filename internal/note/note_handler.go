@@ -137,21 +137,41 @@ func (h *NoteHandler) UpdateNote(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&note).Updates(models.Note{
-		Title:     req.Title,
-		Content:   req.Content,
-		IsPrivate: req.IsPrivate,
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		update := make(map[string]interface{})
+		if req.Title != nil {
+			update["title"] = *req.Title
+		}
+		if req.Content != nil {
+			update["content"] = *req.Content
+		}
+		if req.IsPrivate != nil {
+			update["is_private"] = *req.IsPrivate
+		}
+		if len(update) > 0 {
+			if err := tx.Model(&note).Updates(update).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(req.TagIDs) > 0 {
+			var tags []models.Tag
+			if err := tx.Where("id IN ?", req.TagIDs).Find(&tags).Error; err != nil {
+				return err
+			}
+			result := tx.Model(&note).Association("Tags").Replace(tags)
+			if result != nil {
+				return result
+			}
+		}
+		return tx.Preload("Tags").First(&note, note.ID).Error
 	})
-
-	var tags []models.Tag
-	if len(req.TagIDs) > 0 {
-		h.db.Where("id IN ?", req.TagIDs).Find(&tags)
+	if err != nil {
+		slog.Error("Update note transaction failed", "error", err)
+		utils.Error(c, http.StatusInternalServerError, "更新失败")
+		return
 	}
-	h.db.Model(&note).Association("Tags").Replace(tags)
 
-	h.db.Preload("Tags").First(&note, note.ID)
-
-	// 更新成功后，清理相关缓存
 	cacheKeyNote := "note:" + id
 	cacheKeyAllNotes := "notes:all"
 
