@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"note/internal/cache"
 	"note/internal/models"
-	"note/internal/redis1"
 	"note/internal/utils"
 	"note/internal/validators"
 	"strconv"
@@ -26,7 +26,7 @@ func NewNoteTag(db *gorm.DB) *NoteTag {
 
 func (h *NoteTag) GetTags(c *gin.Context) {
 	cacheKey := "tags:all"
-	cachedTags, err := redis1.Get(cacheKey)
+	cachedTags, err := cache.Get(cacheKey)
 	if err == nil {
 		var tags []models.Tag
 		if err := json.Unmarshal([]byte(cachedTags), &tags); err == nil {
@@ -40,7 +40,7 @@ func (h *NoteTag) GetTags(c *gin.Context) {
 	h.db.Find(&tags)
 
 	tagsJSON, _ := json.Marshal(tags)
-	redis1.SetWithRandomTTL(cacheKey, string(tagsJSON), 10*time.Minute) // 10分钟TTL
+	cache.SetWithRandomTTL(cacheKey, string(tagsJSON), 10*time.Minute) // 10分钟TTL
 
 	utils.Success(c, tags)
 }
@@ -49,7 +49,7 @@ func (h *NoteTag) GetTag(c *gin.Context) {
 	id := c.Param("id")
 	cacheKey := "tag:" + id
 
-	cachedTag, err := redis1.Get(cacheKey)
+	cachedTag, err := cache.Get(cacheKey)
 	if err == nil {
 		var tag models.Tag
 		if err := json.Unmarshal([]byte(cachedTag), &tag); err == nil {
@@ -70,7 +70,7 @@ func (h *NoteTag) GetTag(c *gin.Context) {
 	}
 
 	tagJSON, _ := json.Marshal(tag)
-	redis1.SetWithRandomTTL(cacheKey, string(tagJSON), 10*time.Minute)
+	cache.SetWithRandomTTL(cacheKey, string(tagJSON), 10*time.Minute)
 
 	utils.Success(c, tag)
 }
@@ -89,7 +89,7 @@ func (h *NoteTag) CreateTag(c *gin.Context) {
 	h.db.Create(&tag)
 
 	cacheKeyAllTags := "Tags:all"
-	redis1.Del(cacheKeyAllTags)
+	cache.Del(cacheKeyAllTags)
 
 	utils.Success(c, tag)
 }
@@ -120,8 +120,8 @@ func (h *NoteTag) UpdateTag(c *gin.Context) {
 	cacheKeyTag := "tag:" + id
 	cacheKeyAllTags := "tags:all"
 
-	redis1.Del(cacheKeyTag)
-	redis1.Del(cacheKeyAllTags)
+	cache.Del(cacheKeyTag)
+	cache.Del(cacheKeyAllTags)
 	slog.Info("Cache cleared for updated note", "note_id", id)
 
 	utils.Success(c, tag)
@@ -143,8 +143,8 @@ func (h *NoteTag) DeleteTag(c *gin.Context) {
 	cacheKeyTag := "tag:" + c.Param("id")
 	cacheKeyAllTags := "tags:all"
 
-	redis1.Del(cacheKeyTag)
-	redis1.Del(cacheKeyAllTags)
+	cache.Del(cacheKeyTag)
+	cache.Del(cacheKeyAllTags)
 
 	slog.Info("Tag and related caches cleared", "tag_id", id)
 	utils.Success(c, gin.H{"message": "deleted"})

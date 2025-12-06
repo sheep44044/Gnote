@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"note/internal/cache"
 	"note/internal/models"
-	"note/internal/redis1"
 	"note/internal/utils"
 	"note/internal/validators"
 	"strconv"
@@ -27,7 +27,7 @@ func NewNoteHandler(db *gorm.DB) *NoteHandler {
 func (h *NoteHandler) GetNotes(c *gin.Context) {
 	// 1. 先尝试从缓存获取
 	cacheKey := "notes:all"
-	cachedNotes, err := redis1.Get(cacheKey)
+	cachedNotes, err := cache.Get(cacheKey)
 	if err == nil {
 		var notes []models.Note
 		if err := json.Unmarshal([]byte(cachedNotes), &notes); err == nil {
@@ -45,7 +45,7 @@ func (h *NoteHandler) GetNotes(c *gin.Context) {
 
 	// 3. 将结果存入缓存
 	notesJSON, _ := json.Marshal(notes)
-	redis1.SetWithRandomTTL(cacheKey, string(notesJSON), 10*time.Minute)
+	cache.SetWithRandomTTL(cacheKey, string(notesJSON), 10*time.Minute)
 
 	utils.Success(c, notes)
 }
@@ -60,7 +60,7 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 	id := c.Param("id")
 	cacheKey := "note:" + id
 
-	cachedNote, err := redis1.Get(cacheKey)
+	cachedNote, err := cache.Get(cacheKey)
 	if err == nil {
 		var note models.Note
 		if err := json.Unmarshal([]byte(cachedNote), &note); err == nil {
@@ -84,7 +84,7 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 	}
 
 	noteJSON, _ := json.Marshal(note)
-	redis1.SetWithRandomTTL(cacheKey, string(noteJSON), 10*time.Minute)
+	cache.SetWithRandomTTL(cacheKey, string(noteJSON), 10*time.Minute)
 
 	h.recordNoteView(userID, id)
 
@@ -113,7 +113,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 	h.db.Create(&note)
 
 	cacheKeyAllNotes := "notes:all"
-	redis1.Del(cacheKeyAllNotes)
+	cache.Del(cacheKeyAllNotes)
 
 	utils.Success(c, note)
 }
@@ -175,8 +175,8 @@ func (h *NoteHandler) UpdateNote(c *gin.Context) {
 	cacheKeyNote := "note:" + id
 	cacheKeyAllNotes := "notes:all"
 
-	redis1.Del(cacheKeyNote)
-	redis1.Del(cacheKeyAllNotes)
+	cache.Del(cacheKeyNote)
+	cache.Del(cacheKeyAllNotes)
 	slog.Info("Cache cleared for updated note", "note_id", id)
 
 	utils.Success(c, note)
@@ -198,8 +198,8 @@ func (h *NoteHandler) DeleteNote(c *gin.Context) {
 	cacheKeyNote := "note:" + c.Param("id")
 	cacheKeyAllNotes := "notes:all"
 
-	redis1.Del(cacheKeyNote)
-	redis1.Del(cacheKeyAllNotes)
+	cache.Del(cacheKeyNote)
+	cache.Del(cacheKeyAllNotes)
 
 	slog.Info("Cache cleared for deleted note", "note_id", id)
 	utils.Success(c, gin.H{"message": "deleted"})

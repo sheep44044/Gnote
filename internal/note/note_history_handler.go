@@ -1,7 +1,7 @@
 package note
 
 import (
-	"note/internal/redis1"
+	"note/internal/cache"
 	"note/internal/utils"
 	"time"
 
@@ -19,7 +19,7 @@ func (h *NoteHandler) GetRecentNotes(c *gin.Context) {
 
 	key := "user:history:" + userID
 
-	notes, err := redis1.ZRevRange(key, 0, 4)
+	notes, err := cache.ZRevRange(key, 0, 4)
 	if err != nil {
 		// Redis 出错或 key 不存在都返回空列表（更友好）
 		notes = []string{}
@@ -33,14 +33,14 @@ func (h *NoteHandler) recordNoteView(userID, noteID string) {
 	now := float64(time.Now().Unix())
 
 	// 1. 先移除旧记录（实现去重）
-	redis1.ZRem(key, noteID)
+	cache.ZRem(key, noteID)
 
 	// 2. 添加新记录（以当前时间戳为分数）
-	redis1.ZAdd(key, redis.Z{Score: now, Member: noteID})
+	cache.ZAdd(key, redis.Z{Score: now, Member: noteID})
 
 	// 3. 只保留最近5条（-6 表示从第0名到倒数第6名，共删掉超出的部分）
-	redis1.ZRemRangeByRank(key, 0, -6)
+	cache.ZRemRangeByRank(key, 0, -6)
 
 	// 4. 设置30天自动过期（可选但推荐）
-	redis1.Expire(key, 30*24*time.Hour)
+	cache.Expire(key, 30*24*time.Hour)
 }

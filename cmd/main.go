@@ -3,10 +3,10 @@ package main
 import (
 	"log/slog"
 	"note/config"
+	"note/internal/cache"
 	"note/internal/middleware"
 	"note/internal/models"
 	"note/internal/note"
-	"note/internal/redis1"
 	"note/internal/tag"
 	"note/internal/user"
 
@@ -22,7 +22,7 @@ func main() {
 	}
 
 	// 初始化Redis
-	if err := redis1.Init(cfg); err != nil {
+	if err := cache.Init(cfg); err != nil {
 		slog.Warn("Redis connection failed, continuing without Redis", "error", err)
 	} else {
 		slog.Info("Redis connected successfully")
@@ -45,7 +45,7 @@ func main() {
 	r.Use(middleware.LoggerMiddleware())
 
 	// 公开路由：用户注册/登录
-	userHandler := user.NewUserHandler(db, cfg, redis1.Rdb)
+	userHandler := user.NewUserHandler(db, cfg, cache.Rdb)
 	r.POST("/register", userHandler.Register)
 	r.POST("/login", userHandler.Login)
 

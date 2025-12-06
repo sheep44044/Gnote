@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"note/config"
-	"note/internal/redis1"
+	"note/internal/cache"
 	"strings"
 	"time"
 
@@ -55,7 +55,7 @@ func IsTokenBlacklisted(tokenString string) (bool, error) {
 
 	// 4. 查询 Redis 黑名单
 	key := "blacklist:" + jtiStr
-	_, err := redis1.Get(key)
+	_, err := cache.Get(key)
 	// 不在黑名单中
 	if errors.Is(err, redis.Nil) {
 		return false, nil
@@ -78,7 +78,7 @@ func AddTokenToBlacklist(tokenString string, expiration time.Duration) error {
 
 	if jti, ok := claims["jti"].(float64); ok {
 		key := "blacklist:" + fmt.Sprintf("%d", int64(jti))
-		return redis1.Set(key, "1", expiration)
+		return cache.Set(key, "1", expiration)
 	}
 	return nil
 }

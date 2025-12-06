@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"note/internal/cache"
 	"note/internal/models"
-	"note/internal/redis1"
 	"note/internal/utils"
 	"note/internal/validators"
 	"strconv"
@@ -57,7 +57,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		cacheKey := "user:session:" + userIDStr
 		expiration := h.cfg.JWTExpirationTime // 使用与JWT相同的过期时间
 
-		if err := redis1.SetWithRandomTTL(cacheKey, string(userDataJSON), expiration); err != nil {
+		if err := cache.SetWithRandomTTL(cacheKey, string(userDataJSON), expiration); err != nil {
 			slog.Warn("failed to cache user session", "error", err, "user_id", user.ID)
 		} else {
 			slog.Debug("user session cached successfully", "user_id", user.ID, "cache_key", cacheKey)
