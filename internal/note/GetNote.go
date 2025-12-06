@@ -15,6 +15,17 @@ import (
 )
 
 func (h *NoteHandler) GetNotes(c *gin.Context) {
+	userid, exists := c.Get("user_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+
+	userID, ok := userid.(uint)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "用户ID类型错误")
+		return
+	}
 	// 1. 先尝试从缓存获取
 	cacheKey := "notes:all"
 	cachedNotes, err := cache.Get(cacheKey)
@@ -28,7 +39,13 @@ func (h *NoteHandler) GetNotes(c *gin.Context) {
 	}
 
 	var notes []models.Note
-	if err := h.db.Preload("Tags").Find(&notes).Error; err != nil {
+	err = h.db.Preload("Tags").
+		Where("user_id = ?", userID).
+		Order("is_pinned DESC").
+		Order("updated_at DESC").
+		Find(&notes).Error
+
+	if err != nil {
 		utils.Error(c, http.StatusInternalServerError, "database error")
 		return
 	}
