@@ -1,0 +1,82 @@
+package note
+
+import (
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"note/internal/cache"
+	"note/internal/models"
+	"note/internal/utils"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+func (h *NoteHandler) GetNotes(c *gin.Context) {
+	// 1. 先尝试从缓存获取
+	cacheKey := "notes:all"
+	cachedNotes, err := cache.Get(cacheKey)
+	if err == nil {
+		var notes []models.Note
+		if err := json.Unmarshal([]byte(cachedNotes), &notes); err == nil {
+			slog.Debug("Notes retrieved from cache", "key", cacheKey)
+			utils.Success(c, notes)
+			return
+		}
+	}
+
+	var notes []models.Note
+	if err := h.db.Preload("Tags").Find(&notes).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	// 3. 将结果存入缓存
+	notesJSON, _ := json.Marshal(notes)
+	cache.SetWithRandomTTL(cacheKey, string(notesJSON), 10*time.Minute)
+
+	utils.Success(c, notes)
+}
+
+func (h *NoteHandler) GetNote(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		utils.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	id := c.Param("id")
+	cacheKey := "note:" + id
+
+	cachedNote, err := cache.Get(cacheKey)
+	if err == nil {
+		var note models.Note
+		if err := json.Unmarshal([]byte(cachedNote), &note); err == nil {
+			slog.Debug("Notes retrieved from cache", "key", cacheKey)
+
+			h.recordNoteView(userID, id)
+
+			utils.Success(c, note)
+			return
+		}
+	}
+
+	var note models.Note
+	if err := h.db.Preload("Tags").Where("id = ?", id).First(&note).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.Error(c, http.StatusNotFound, "note not found")
+		} else {
+			utils.Error(c, http.StatusInternalServerError, "database error")
+		}
+		return
+	}
+
+	noteJSON, _ := json.Marshal(note)
+	cache.SetWithRandomTTL(cacheKey, string(noteJSON), 10*time.Minute)
+
+	h.recordNoteView(userID, id)
+
+	utils.Success(c, note)
+}
