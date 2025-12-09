@@ -11,17 +11,12 @@ import (
 )
 
 func (h *NoteHandler) SearchNotes(c *gin.Context) {
-	userid, exists := c.Get("user_id")
-	if !exists {
-		utils.Error(c, http.StatusUnauthorized, "未登录")
+	userID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	userID, ok := userid.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "用户ID类型错误")
-		return
-	}
 	// 1. 获取查询参数
 	query := c.Query("q")
 	if query == "" {
@@ -47,7 +42,7 @@ func (h *NoteHandler) SearchNotes(c *gin.Context) {
 	offset := (page - 1) * pageSize
 
 	// 同时搜标题和内容（忽略大小写）
-	err := h.db.Where("title LIKE ? OR content LIKE ?", "%"+query+"%", "%"+query+"%").
+	err = h.db.Where("title LIKE ? OR content LIKE ?", "%"+query+"%", "%"+query+"%").
 		Where("user_id = ?", userID). // ← 别忘了权限！
 		Order("updated_at DESC").
 		Limit(pageSize).

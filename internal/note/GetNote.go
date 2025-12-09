@@ -8,6 +8,7 @@ import (
 	"note/internal/cache"
 	"note/internal/models"
 	"note/internal/utils"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,17 +16,12 @@ import (
 )
 
 func (h *NoteHandler) GetNotes(c *gin.Context) {
-	userid, exists := c.Get("user_id")
-	if !exists {
-		utils.Error(c, http.StatusUnauthorized, "未登录")
+	userID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	userID, ok := userid.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "用户ID类型错误")
-		return
-	}
 	// 1. 先尝试从缓存获取
 	cacheKey := "notes:all"
 	cachedNotes, err := cache.Get(cacheKey)
@@ -58,9 +54,9 @@ func (h *NoteHandler) GetNotes(c *gin.Context) {
 }
 
 func (h *NoteHandler) GetNote(c *gin.Context) {
-	userID := c.GetString("user_id")
-	if userID == "" {
-		utils.Error(c, http.StatusUnauthorized, "user not authenticated")
+	userID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -73,7 +69,7 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 		if err := json.Unmarshal([]byte(cachedNote), &note); err == nil {
 			slog.Debug("Notes retrieved from cache", "key", cacheKey)
 
-			h.recordNoteView(userID, id)
+			h.recordNoteView(strconv.Itoa(int(userID)), id)
 
 			utils.Success(c, note)
 			return
@@ -81,7 +77,7 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 	}
 
 	var note models.Note
-	if err := h.db.Preload("Tags").Where("id = ?", id).First(&note).Error; err != nil {
+	if err := h.db.Preload("Tags").Where("id = ? AND user_id = ?", id, userID).First(&note).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			utils.Error(c, http.StatusNotFound, "note not found")
 		} else {
@@ -93,7 +89,7 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 	noteJSON, _ := json.Marshal(note)
 	cache.SetWithRandomTTL(cacheKey, string(noteJSON), 10*time.Minute)
 
-	h.recordNoteView(userID, id)
+	h.recordNoteView(strconv.Itoa(int(userID)), id)
 
 	utils.Success(c, note)
 }

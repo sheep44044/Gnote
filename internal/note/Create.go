@@ -11,6 +11,12 @@ import (
 )
 
 func (h *NoteHandler) CreateNote(c *gin.Context) {
+	userID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+
 	var req validators.CreateNoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusUnprocessableEntity, "invalid note")
@@ -23,6 +29,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 	}
 
 	note := models.Note{
+		UserID:    userID,
 		Title:     req.Title,
 		Content:   req.Content,
 		Tags:      tags,

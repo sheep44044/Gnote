@@ -12,15 +12,10 @@ import (
 func (h *NoteHandler) ReactToNote(c *gin.Context) {
 	noteID := c.Param("id")
 	noteIDUint64, _ := strconv.ParseUint(noteID, 10, 64)
-	userid, exists := c.Get("user_id")
-	if !exists {
-		utils.Error(c, http.StatusUnauthorized, "未登录")
-		return
-	}
 
-	userID, ok := userid.(uint)
-	if !ok {
-		utils.Error(c, http.StatusInternalServerError, "用户ID类型错误")
+	userID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 

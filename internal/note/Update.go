@@ -8,6 +8,7 @@ import (
 	"note/internal/models"
 	"note/internal/utils"
 	"note/internal/validators"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -15,6 +16,25 @@ import (
 
 func (h *NoteHandler) UpdateNote(c *gin.Context) {
 	id := c.Param("id")
+
+	userid, exists := c.Get("user_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未登录")
+		return
+	}
+
+	userIDStr, ok := userid.(string)
+	if !ok {
+		utils.Error(c, http.StatusInternalServerError, "用户ID类型错误")
+		return
+	}
+	// 将字符串转回 uint
+	uid, err := strconv.ParseUint(userIDStr, 10, 32)
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "用户ID格式错误")
+		return
+	}
+	userID := uint(uid)
 
 	var req validators.UpdateNoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -32,7 +52,7 @@ func (h *NoteHandler) UpdateNote(c *gin.Context) {
 		return
 	}
 
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
 		update := make(map[string]interface{})
 		if req.Title != nil {
 			update["title"] = *req.Title
@@ -51,7 +71,7 @@ func (h *NoteHandler) UpdateNote(c *gin.Context) {
 
 		if len(req.TagIDs) > 0 {
 			var tags []models.Tag
-			if err := tx.Where("id IN ?", req.TagIDs).Find(&tags).Error; err != nil {
+			if err := tx.Where("id IN ? AND user_id IN ?", req.TagIDs, userID).Find(&tags).Error; err != nil {
 				return err
 			}
 			result := tx.Model(&note).Association("Tags").Replace(tags)

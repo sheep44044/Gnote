@@ -18,7 +18,13 @@ func (h *NoteHandler) DeleteNote(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Delete(&models.Note{}, id)
+	userID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	result := h.db.Where("id = ? AND user_id = ?", id, userID).Delete(&models.Note{})
 	if result.RowsAffected == 0 {
 		utils.Error(c, http.StatusNotFound, "note not found")
 		return
