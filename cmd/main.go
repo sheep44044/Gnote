@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// 迁移所有模型
-	err = db.AutoMigrate(&models.User{}, &models.Note{}, &models.Tag{})
+	err = db.AutoMigrate(&models.User{}, &models.Note{}, &models.Tag{}, &models.Favorite{}, &models.Reaction{})
 	if err != nil {
 		panic("failed to migrate database: " + err.Error())
 	}
@@ -75,8 +75,11 @@ func main() {
 			notes.GET("/recent", noteHandler.GetRecentNotes)
 
 			notes.PATCH("/:id/pin", noteHandler.TogglePin)
-			notes.PATCH("/:id/favorite", noteHandler.ToggleFavorite)
-			notes.GET("/favorites", noteHandler.ListFavorites)
+			notes.POST("/:id/favorite", noteHandler.FavoriteNote)
+			notes.DELETE("/:id/unfavorite", noteHandler.UnfavoriteNote)
+			notes.GET("/favorites", noteHandler.ListMyFavorites)
+
+			notes.GET("/community", noteHandler.ListPublicNotes)
 		}
 
 		tagHandler := tag.NewNoteTag(db)
