@@ -2,7 +2,6 @@ package utils
 
 import (
 	"errors"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,15 +12,13 @@ func GetUserID(c *gin.Context) (uint, error) {
 		return 0, errors.New("未登录")
 	}
 
-	uidStr, ok := uidRaw.(string)
-	if !ok {
-		return 0, errors.New("用户ID类型错误")
+	if uidFloat, ok := uidRaw.(float64); ok {
+		return uint(uidFloat), nil
 	}
 
-	uid, err := strconv.ParseUint(uidStr, 10, 32)
-	if err != nil {
-		return 0, errors.New("用户ID格式错误")
+	if uidUint, ok := uidRaw.(uint); ok {
+		return uidUint, nil
 	}
 
-	return uint(uid), nil
+	return 0, errors.New("用户ID格式错误")
 }
