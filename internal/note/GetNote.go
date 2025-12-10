@@ -94,3 +94,35 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 
 	utils.Success(c, note)
 }
+
+func (h *NoteHandler) GetFollowingFeed(c *gin.Context) {
+	userID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	var followedIDs []uint
+	err = h.db.Model(&models.UserFollow{}).
+		Where("follower_id = ?", userID).
+		Pluck("followed_id", &followedIDs).Error
+
+	if err != nil {
+		utils.Error(c, http.StatusInternalServerError, "database error")
+	}
+
+	if len(followedIDs) == 0 {
+		utils.Success(c, []models.Note{}) // 没关注任何人，返回空
+		return
+	}
+
+	var notes []models.Note
+	h.db.Preload("Tags").
+		Where("user_id IN ?", followedIDs).
+		Where("is_private = ?", false).
+		Order("created_at DESC").
+		Limit(20).
+		Find(&notes)
+
+	utils.Success(c, notes)
+}
