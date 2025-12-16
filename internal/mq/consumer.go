@@ -54,7 +54,7 @@ func (c *Consumer) consumeFavorite() {
 				// 只有非重复键错误才当做异常处理
 				if !errors.Is(err, gorm.ErrDuplicatedKey) {
 					slog.Error("Failed to insert favorite", "error", err)
-					// TODO: 在这里可以做重试逻辑，或者手动 Nack
+					//  在这里可以做重试逻辑，或者手动 Nack
 				}
 			} else {
 				// 更新计数（+1）

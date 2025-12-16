@@ -49,12 +49,12 @@ func New(cfg *config.Config) (*RabbitMQ, error) {
 
 func initQueue(ch *amqp.Channel, queueName string) error {
 	_, err := ch.QueueDeclare(
-		"favorite_queue", // name
-		true,             // durable (持久化)
-		false,            // delete when unused
-		false,            // exclusive
-		false,            // no-wait
-		nil,              // arguments
+		queueName, // name
+		true,      // durable (持久化)
+		false,     // delete when unused
+		false,     // exclusive
+		false,     // no-wait
+		nil,       // arguments
 	)
 	if err != nil {
 		slog.Error("Failed to declare a queue", "error", err)
