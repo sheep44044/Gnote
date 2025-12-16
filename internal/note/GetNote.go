@@ -61,6 +61,7 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 	}
 
 	id := c.Param("id")
+	noteID, _ := strconv.ParseUint(id, 0, 64)
 	cacheKey := "note:" + id
 
 	cachedNote, err := h.cache.Get(c, cacheKey)
@@ -69,7 +70,7 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 		if err := json.Unmarshal([]byte(cachedNote), &note); err == nil {
 			slog.Debug("Notes retrieved from cache", "key", cacheKey)
 
-			h.recordNoteView(c, strconv.Itoa(int(userID)), id)
+			h.recordNoteView(c, userID, uint(noteID))
 
 			utils.Success(c, note)
 			return
@@ -89,7 +90,7 @@ func (h *NoteHandler) GetNote(c *gin.Context) {
 	noteJSON, _ := json.Marshal(note)
 	h.cache.SetWithRandomTTL(c, cacheKey, string(noteJSON), 10*time.Minute)
 
-	h.recordNoteView(c, strconv.Itoa(int(userID)), id)
+	h.recordNoteView(c, userID, uint(noteID))
 
 	utils.Success(c, note)
 }

@@ -22,6 +22,13 @@ func main() {
 		panic("failed to load config: " + err.Error())
 	}
 
+	dsn := cfg.DBUser + ":" + cfg.DBPassword + "@tcp(" + cfg.DBHost + ":" + cfg.DBPort + ")/" +
+		cfg.DBName + "?charset=utf8mb4&parseTime=True&loc=Local"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic("failed to connect database: " + err.Error())
+	}
+
 	// 初始化Redis
 	rdb, err := cache.New(cfg)
 	if err != nil {
@@ -38,13 +45,8 @@ func main() {
 		slog.Info("RabbitMQ connected successfully")
 		defer rabbit.Close() // 程序退出时关闭
 	}
-
-	dsn := cfg.DBUser + ":" + cfg.DBPassword + "@tcp(" + cfg.DBHost + ":" + cfg.DBPort + ")/" +
-		cfg.DBName + "?charset=utf8mb4&parseTime=True&loc=Local"
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	if err != nil {
-		panic("failed to connect database: " + err.Error())
-	}
+	consumer := mq.NewConsumer(db, rabbit)
+	consumer.Start()
 
 	// 迁移所有模型
 	err = db.AutoMigrate(&models.User{}, &models.Note{}, &models.Tag{}, &models.Favorite{}, &models.Reaction{}, &models.UserFollow{})
@@ -76,7 +78,7 @@ func main() {
 			users.DELETE("/:id/follow", userHandler.UnfollowUser)
 		}
 
-		noteHandler := note.NewNoteHandler(db, rdb)
+		noteHandler := note.NewNoteHandler(db, rdb, rabbit)
 		notes := auth.Group("/notes")
 		{
 			notes.GET("", noteHandler.GetNotes)
