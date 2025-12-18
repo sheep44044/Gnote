@@ -29,6 +29,10 @@ type Config struct {
 	MQPort     string `mapstructure:"RABBITMQ_PORT"`
 	MQUser     string `mapstructure:"RABBITMQ_USER"`
 	MQPassword string `mapstructure:"RABBITMQ_PASSWORD"`
+
+	AIKey     string `mapstructure:"AI_API_KEY"`
+	AIBaseURL string `mapstructure:"AI_BASE_URL"`
+	AIModel   string `mapstructure:"AI_MODEL"`
 }
 
 func Load() (*Config, error) {
@@ -90,6 +94,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("RABBITMQ_PORT", "5672")
 	v.SetDefault("RABBITMQ_USER", "admin")
 	v.SetDefault("RABBITMQ_PASSWORD", "123456")
+
+	v.SetDefault("AI_BASE_URL", "https://api.deepseek.com")
+	v.SetDefault("AI_MODEL", "deepseek-chat")
 }
 
 func configureViper(v *viper.Viper) {
