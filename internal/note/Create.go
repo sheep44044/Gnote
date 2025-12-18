@@ -7,6 +7,7 @@ import (
 	"note/internal/models"
 	"note/internal/utils"
 	"note/internal/validators"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,10 +19,17 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 		return
 	}
 
+	needSummary := c.DefaultQuery("gen_summary", "false") == "true"
+
 	var req validators.CreateNoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.Error(c, http.StatusUnprocessableEntity, "invalid note")
 		return
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = "生成中..."
 	}
 
 	var tags []models.Tag
@@ -31,7 +39,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 
 	note := models.Note{
 		UserID:    userID,
-		Title:     req.Title,
+		Title:     title,
 		Content:   req.Content,
 		Tags:      tags,
 		IsPrivate: req.IsPrivate,
@@ -41,6 +49,18 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 
 	cacheKeyAllNotes := fmt.Sprintf("notes:user:%d", userID)
 	h.cache.Del(c, cacheKeyAllNotes)
+
+	go func() {
+		// 场景 A: 如果标题为空（之前被处理成占位符了），发送生成标题任务
+		if strings.TrimSpace(req.Title) == "" {
+			h.sendAITask(note.ID, "generate_title")
+		}
+
+		// 场景 B: 如果前端要求生成摘要，发送生成摘要任务
+		if needSummary {
+			h.sendAITask(note.ID, "generate_summary")
+		}
+	}()
 
 	if !note.IsPrivate {
 		go func() {
@@ -57,4 +77,16 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 		}()
 	}
 	utils.Success(c, note)
+}
+
+func (h *NoteHandler) sendAITask(noteID uint, taskType string) {
+	if h.rabbit == nil {
+		return
+	}
+	msg := models.AITaskMsg{
+		NoteID: noteID,
+		Task:   taskType,
+	}
+	body, _ := json.Marshal(msg)
+	h.rabbit.Publish("ai_queue", body)
 }
