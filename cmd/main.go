@@ -3,6 +3,7 @@ package main
 import (
 	"log/slog"
 	"note/config"
+	"note/internal/ai"
 	"note/internal/cache"
 	"note/internal/middleware"
 	"note/internal/models"
@@ -45,7 +46,10 @@ func main() {
 		slog.Info("RabbitMQ connected successfully")
 		defer rabbit.Close() // 程序退出时关闭
 	}
-	consumer := mq.NewConsumer(db, rabbit)
+
+	aiService := ai.NewAIService(cfg)
+
+	consumer := mq.NewConsumer(db, rdb, rabbit, aiService)
 	consumer.Start()
 
 	// 迁移所有模型

@@ -41,6 +41,7 @@ func New(cfg *config.Config) (*RabbitMQ, error) {
 	initQueue(ch, "react_queue")
 	initQueue(ch, "history_queue")
 	initQueue(ch, "feed_queue")
+	initQueue(ch, "ai_queue")
 
 	return &RabbitMQ{
 		conn:    conn,
