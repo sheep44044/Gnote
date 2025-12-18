@@ -1,7 +1,7 @@
 package validators
 
 type CreateNoteRequest struct {
-	Title     string `json:"title" binding:"required"`
+	Title     string `json:"title"`
 	Content   string `json:"content" binding:"required"`
 	IsPrivate bool   `json:"isPrivate"`
 	TagIDs    []uint `json:"tag_ids"`
