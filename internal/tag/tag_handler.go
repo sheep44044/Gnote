@@ -17,16 +17,17 @@ import (
 )
 
 type NoteTag struct {
-	db *gorm.DB
+	db    *gorm.DB
+	cache *cache.RedisCache
 }
 
-func NewNoteTag(db *gorm.DB) *NoteTag {
-	return &NoteTag{db: db}
+func NewNoteTag(db *gorm.DB, cache *cache.RedisCache) *NoteTag {
+	return &NoteTag{db: db, cache: cache}
 }
 
 func (h *NoteTag) GetTags(c *gin.Context) {
 	cacheKey := "tags:all"
-	cachedTags, err := cache.Get(cacheKey)
+	cachedTags, err := h.cache.Get(c, cacheKey)
 	if err == nil {
 		var tags []models.Tag
 		if err := json.Unmarshal([]byte(cachedTags), &tags); err == nil {
@@ -40,7 +41,7 @@ func (h *NoteTag) GetTags(c *gin.Context) {
 	h.db.Find(&tags)
 
 	tagsJSON, _ := json.Marshal(tags)
-	cache.SetWithRandomTTL(cacheKey, string(tagsJSON), 10*time.Minute) // 10分钟TTL
+	h.cache.SetWithRandomTTL(c, cacheKey, string(tagsJSON), 10*time.Minute) // 10分钟TTL
 
 	utils.Success(c, tags)
 }
@@ -49,7 +50,7 @@ func (h *NoteTag) GetTag(c *gin.Context) {
 	id := c.Param("id")
 	cacheKey := "tag:" + id
 
-	cachedTag, err := cache.Get(cacheKey)
+	cachedTag, err := h.cache.Get(c, cacheKey)
 	if err == nil {
 		var tag models.Tag
 		if err := json.Unmarshal([]byte(cachedTag), &tag); err == nil {
@@ -70,7 +71,7 @@ func (h *NoteTag) GetTag(c *gin.Context) {
 	}
 
 	tagJSON, _ := json.Marshal(tag)
-	cache.SetWithRandomTTL(cacheKey, string(tagJSON), 10*time.Minute)
+	h.cache.SetWithRandomTTL(c, cacheKey, string(tagJSON), 10*time.Minute)
 
 	utils.Success(c, tag)
 }
@@ -89,7 +90,7 @@ func (h *NoteTag) CreateTag(c *gin.Context) {
 	h.db.Create(&tag)
 
 	cacheKeyAllTags := "Tags:all"
-	cache.Del(cacheKeyAllTags)
+	h.cache.Del(c, cacheKeyAllTags)
 
 	utils.Success(c, tag)
 }
@@ -120,8 +121,8 @@ func (h *NoteTag) UpdateTag(c *gin.Context) {
 	cacheKeyTag := "tag:" + id
 	cacheKeyAllTags := "tags:all"
 
-	cache.Del(cacheKeyTag)
-	cache.Del(cacheKeyAllTags)
+	h.cache.Del(c, cacheKeyTag)
+	h.cache.Del(c, cacheKeyAllTags)
 	slog.Info("Cache cleared for updated note", "note_id", id)
 
 	utils.Success(c, tag)
@@ -143,8 +144,8 @@ func (h *NoteTag) DeleteTag(c *gin.Context) {
 	cacheKeyTag := "tag:" + c.Param("id")
 	cacheKeyAllTags := "tags:all"
 
-	cache.Del(cacheKeyTag)
-	cache.Del(cacheKeyAllTags)
+	h.cache.Del(c, cacheKeyTag)
+	h.cache.Del(c, cacheKeyAllTags)
 
 	slog.Info("Tag and related caches cleared", "tag_id", id)
 	utils.Success(c, gin.H{"message": "deleted"})
