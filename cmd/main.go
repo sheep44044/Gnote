@@ -11,6 +11,7 @@ import (
 	"note/internal/note"
 	"note/internal/tag"
 	"note/internal/user"
+	"note/internal/vector"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
@@ -47,6 +48,8 @@ func main() {
 		defer rabbit.Close() // 程序退出时关闭
 	}
 
+	qdrant := vector.NewQdrantService(cfg.QdrantHost, cfg.QdrantPort, "notes_collection", cfg.QdrantAPIKey)
+
 	aiService := ai.NewAIService(cfg)
 
 	consumer := mq.NewConsumer(db, rdb, rabbit, aiService)
@@ -82,7 +85,7 @@ func main() {
 			users.DELETE("/:id/follow", userHandler.UnfollowUser)
 		}
 
-		noteHandler := note.NewNoteHandler(db, rdb, rabbit)
+		noteHandler := note.NewNoteHandler(db, rdb, rabbit, aiService, qdrant)
 		notes := auth.Group("/notes")
 		{
 			notes.GET("", noteHandler.GetNotes)
@@ -103,7 +106,7 @@ func main() {
 			notes.GET("/follow", noteHandler.GetFollowingFeed)
 		}
 
-		tagHandler := tag.NewNoteTag(db)
+		tagHandler := tag.NewNoteTag(db, rdb)
 		tags := auth.Group("/tags")
 		{
 			tags.GET("", tagHandler.GetTags)
