@@ -38,6 +38,12 @@ type Config struct {
 	VolcEngineBaseURL string `mapstructure:"VolcEngineBaseURL"`
 	VolcChatModelID   string `mapstructure:"VolcChatModelID"`
 	VolcEmbedModelID  string `mapstructure:"VolcEmbedModelID"`
+
+	MinioEndpoint  string `mapstructure:"MINIO_ENDPOINT"`
+	MinioAccessKey string `mapstructure:"MINIO_ACCESS_KEY"`
+	MinioSecretKey string `mapstructure:"MINIO_SECRET_KEY"`
+	MinioBucket    string `mapstructure:"MINIO_BUCKET"`
+	MinioUseSSL    bool   `mapstructure:"MINIO_USE_SSL"`
 }
 
 func Load() (*Config, error) {
@@ -108,6 +114,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("volc.engine.base_url", "https://ark.cn-beijing.volces.com/api/v3")
 	v.SetDefault("volc.engine.chat_model_id", "ep-20251219174526-wnm95")
 	v.SetDefault("volc.engine.embed_model_id", "ep-20251219175039-rrcf2")
+
+	v.SetDefault("MINIO_ENDPOINT", "localhost:9000")
+	v.SetDefault("MINIO_BUCKET", "notes-images")
+	v.SetDefault("MINIO_USE_SSL", false)
 }
 
 func configureViper(v *viper.Viper) {

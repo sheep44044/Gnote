@@ -9,6 +9,7 @@ import (
 	"note/internal/models"
 	"note/internal/mq"
 	"note/internal/note"
+	"note/internal/storage"
 	"note/internal/tag"
 	"note/internal/user"
 	"note/internal/vector"
@@ -55,6 +56,13 @@ func main() {
 	consumer := mq.NewConsumer(db, rdb, rabbit, aiService)
 	consumer.Start()
 
+	minioSvc := storage.NewFileStorage(
+		cfg.MinioEndpoint,  // "localhost:9000"
+		cfg.MinioAccessKey, // "admin"
+		cfg.MinioSecretKey, // "password123"
+		cfg.MinioBucket,    // "notes-images"
+	)
+
 	// 迁移所有模型
 	err = db.AutoMigrate(&models.User{}, &models.Note{}, &models.Tag{}, &models.Favorite{}, &models.Reaction{}, &models.UserFollow{})
 	if err != nil {
@@ -85,7 +93,7 @@ func main() {
 			users.DELETE("/:id/follow", userHandler.UnfollowUser)
 		}
 
-		noteHandler := note.NewNoteHandler(db, rdb, rabbit, aiService, qdrant)
+		noteHandler := note.NewNoteHandler(db, rdb, rabbit, aiService, qdrant, minioSvc)
 		notes := auth.Group("/notes")
 		{
 			notes.GET("", noteHandler.GetNotes)
