@@ -2,13 +2,13 @@ package note
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 	"note/internal/models"
 	"note/internal/utils"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func (h *NoteHandler) DeleteNote(c *gin.Context) {
@@ -33,9 +33,9 @@ func (h *NoteHandler) DeleteNote(c *gin.Context) {
 	cacheKeyNote := "note:" + c.Param("id")
 	cacheKeyAllNotes := fmt.Sprintf("notes:user:%d", userID)
 
-	h.cache.Del(c, cacheKeyNote)
-	h.cache.Del(c, cacheKeyAllNotes)
+	_ = h.cache.Del(c, cacheKeyNote)
+	_ = h.cache.Del(c, cacheKeyAllNotes)
 
-	slog.Info("Cache cleared for deleted note", "note_id", id)
+	zap.L().Info("Cache cleared for deleted note", zap.Int("note_id", id))
 	utils.Success(c, gin.H{"message": "deleted"})
 }
