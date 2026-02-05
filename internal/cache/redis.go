@@ -91,3 +91,33 @@ func (c *RedisCache) Pipeline() redis.Pipeliner {
 func (c *RedisCache) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
 	return c.client.LRange(ctx, key, start, stop).Result()
 }
+
+func (c *RedisCache) ClearCacheByPattern(ctx context.Context, cache *RedisCache, pattern string) error {
+	var cursor uint64
+	var keys []string
+	var err error
+
+	// 使用 SCAN 而不是 KEYS (KEYS 会阻塞生产环境的 Redis)
+	for {
+		// 每次扫 100 个，防止阻塞
+		keys, cursor, err = c.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return err
+		}
+
+		if len(keys) > 0 {
+			// 批量删除
+			// 使用 Pipeline 提高删除效率
+			pipe := cache.Pipeline()
+			pipe.Del(ctx, keys...)
+			if _, err := pipe.Exec(ctx); err != nil {
+				return err
+			}
+		}
+
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
+}

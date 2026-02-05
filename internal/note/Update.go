@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"note/internal/models"
 	"note/internal/utils"
 	"note/internal/validators"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -29,7 +29,7 @@ func (h *NoteHandler) UpdateNote(c *gin.Context) {
 	}
 
 	var note models.Note
-	if err := h.db.First(&note, id).Error; err != nil {
+	if err := h.db.Where("id = ? AND user_id = ?", id, userID).First(&note).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			utils.Error(c, http.StatusNotFound, "note not found")
 		} else {
@@ -55,44 +55,45 @@ func (h *NoteHandler) UpdateNote(c *gin.Context) {
 			}
 		}
 
-		if len(req.TagIDs) > 0 {
+		if req.TagIDs != nil {
 			var tags []models.Tag
-			if err := tx.Where("id IN ? AND user_id IN ?", req.TagIDs, userID).Find(&tags).Error; err != nil {
-				return err
+			if len(*req.TagIDs) > 0 {
+				if err := tx.Where("id IN ? AND user_id = ?", *req.TagIDs, userID).Find(&tags).Error; err != nil {
+					return err
+				}
 			}
-			result := tx.Model(&note).Association("Tags").Replace(tags)
-			if result != nil {
-				return result
+			if err := tx.Model(&note).Association("Tags").Replace(tags); err != nil {
+				return err
 			}
 		}
 		return tx.Preload("Tags").First(&note, note.ID).Error
 	})
 	if err != nil {
-		slog.Error("Update note transaction failed", "error", err)
+		zap.L().Error("Update note transaction failed", zap.Error(err))
 		utils.Error(c, http.StatusInternalServerError, "更新失败")
 		return
 	}
 
 	cacheKeyNote := "note:" + id
-	cacheKeyAllNotes := fmt.Sprintf("notes:user:%d", userID)
+	cacheKeyAllNotes := fmt.Sprintf("notes:user:%d*", userID)
 
-	h.cache.Del(c, cacheKeyNote)
-	h.cache.Del(c, cacheKeyAllNotes)
-	slog.Info("Cache cleared for updated note", "note_id", id)
+	_ = h.cache.Del(c, cacheKeyNote)
+	_ = h.cache.ClearCacheByPattern(c, h.cache, cacheKeyAllNotes)
 
-	// 3. [新增] 异步更新 Qdrant
+	zap.L().Info("Cache cleared for updated note", zap.String("note_id", id))
+
 	go func(n models.Note) {
 		textToEmbed := fmt.Sprintf("%s\n%s", n.Title, n.Content)
 
 		vec, err := h.ai.GetEmbedding(textToEmbed)
 		if err != nil {
+			zap.L().Error("Embedding generation failed", zap.Error(err))
 			return
 		}
 
-		// 重新 Upsert 会覆盖旧数据，正好实现了更新
 		err = h.qdrant.Upsert(context.Background(), n.ID, vec, n.UserID, n.IsPrivate)
-		if err == nil {
-			// log error
+		if err != nil {
+			zap.L().Error("Qdrant upsert failed", zap.Error(err))
 		}
 	}(note)
 
