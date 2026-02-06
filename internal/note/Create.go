@@ -9,8 +9,10 @@ import (
 	"note/internal/utils"
 	"note/internal/validators"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func (h *NoteHandler) CreateNote(c *gin.Context) {
@@ -21,6 +23,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 	}
 
 	needSummary := c.DefaultQuery("gen_summary", "false") == "true"
+	needGenTitle := c.DefaultQuery("gen_title", "false") == "true"
 
 	var req validators.CreateNoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -29,13 +32,21 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 	}
 
 	title := strings.TrimSpace(req.Title)
+	usingDefaultTitle := false
+
 	if title == "" {
-		title = "生成中..."
+		defaultTitle, err := h.generateDefaultTitle(userID)
+		if err != nil {
+			utils.Error(c, http.StatusInternalServerError, "生成默认标题失败")
+			return
+		}
+		title = defaultTitle
+		usingDefaultTitle = true
 	}
 
 	var tags []models.Tag
 	if len(req.TagIDs) > 0 {
-		h.db.Where("id IN ?", req.TagIDs).Find(&tags)
+		h.db.Where("id IN ? AND user_id = ?", req.TagIDs, userID).Find(&tags)
 	}
 
 	note := models.Note{
@@ -46,36 +57,36 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 		IsPrivate: req.IsPrivate,
 	}
 
-	h.db.Create(&note)
+	if err := h.db.Create(&note).Error; err != nil {
+		zap.L().Error("Create note db error", zap.Error(err))
+		utils.Error(c, http.StatusInternalServerError, "创建失败")
+		return
+	}
 
-	cacheKeyAllNotes := fmt.Sprintf("notes:user:%d", userID)
-	h.cache.Del(c, cacheKeyAllNotes)
+	cacheKeyAllNotes := fmt.Sprintf("notes:user:%d*", userID)
+	_ = h.cache.ClearCacheByPattern(c, h.cache, cacheKeyAllNotes)
 
 	go func(n models.Note) {
-		// A. 拼接标题和内容，让搜索更准
+		// 拼接标题和内容，让搜索更准
 		textToEmbed := fmt.Sprintf("%s\n%s", n.Title, n.Content)
 
-		// B. 调用 OpenAI/豆包 生成向量
 		vec, err := h.ai.GetEmbedding(textToEmbed)
 		if err != nil {
-			// 建议加个日志，fmt.Println("AI Embedding failed:", err)
+			zap.L().Error("AI embedding failed", zap.Error(err))
 			return
 		}
 
-		// C. 存入 Qdrant (传入 ID, 向量, UserID, IsPublic)
 		err = h.qdrant.Upsert(context.Background(), n.ID, vec, n.UserID, n.IsPrivate)
-		if err == nil {
-			// fmt.Println("Qdrant upsert failed:", err)
+		if err != nil {
+			zap.L().Error("Qdrant upsert failed", zap.Error(err))
 		}
 	}(note)
 
 	go func() {
-		// 场景 A: 如果标题为空（之前被处理成占位符了），发送生成标题任务
-		if strings.TrimSpace(req.Title) == "" {
+		if usingDefaultTitle && needGenTitle {
 			h.sendAITask(note.ID, "generate_title")
 		}
 
-		// 场景 B: 如果前端要求生成摘要，发送生成摘要任务
 		if needSummary {
 			h.sendAITask(note.ID, "generate_summary")
 		}
@@ -91,7 +102,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 			body, _ := json.Marshal(msg)
 			if h.rabbit != nil {
 				// 只需要发这一条消息，剩下的交给消费者去扩散
-				h.rabbit.Publish("feed_queue", body)
+				_ = h.rabbit.Publish("feed_queue", body)
 			}
 		}()
 	}
@@ -107,5 +118,38 @@ func (h *NoteHandler) sendAITask(noteID uint, taskType string) {
 		Task:   taskType,
 	}
 	body, _ := json.Marshal(msg)
-	h.rabbit.Publish("ai_queue", body)
+	_ = h.rabbit.Publish("ai_queue", body)
+}
+
+func (h *NoteHandler) generateDefaultTitle(userID uint) (string, error) {
+	today := time.Now().Format("2006-01-02")
+	baseTitle := fmt.Sprintf("笔记 %s", today)
+	finalTitle := baseTitle
+
+	var count int64
+	suffix := 1
+
+	for {
+		err := h.db.Model(&models.Note{}).
+			Where("user_id = ? AND title = ?", userID, finalTitle).
+			Count(&count).Error
+
+		if err != nil {
+			return "", err
+		}
+
+		if count == 0 {
+			break
+		}
+
+		finalTitle = fmt.Sprintf("%s (%d)", baseTitle, suffix)
+		suffix++
+
+		// 防止死循环的保底（虽然不太可能）
+		if suffix > 100 {
+			break
+		}
+	}
+
+	return finalTitle, nil
 }

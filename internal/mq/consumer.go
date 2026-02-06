@@ -8,6 +8,7 @@ import (
 	"note/internal/ai"
 	"note/internal/cache"
 	"note/internal/models"
+	"note/internal/vector"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -20,15 +21,17 @@ type Consumer struct {
 	cache  *cache.RedisCache
 	rabbit *RabbitMQ
 	ai     *ai.AIService
+	qdrant *vector.QdrantService
 }
 
 // NewConsumer 初始化消费者管理器
-func NewConsumer(db *gorm.DB, cache *cache.RedisCache, rabbit *RabbitMQ, ai *ai.AIService) *Consumer {
+func NewConsumer(db *gorm.DB, cache *cache.RedisCache, rabbit *RabbitMQ, ai *ai.AIService, qdrant *vector.QdrantService) *Consumer {
 	return &Consumer{
 		db:     db,
 		cache:  cache,
 		rabbit: rabbit,
 		ai:     ai,
+		qdrant: qdrant,
 	}
 }
 
@@ -184,8 +187,6 @@ func (c *Consumer) handleToggleReaction(msg models.ReactionMsg) {
 			note.ReactionCounts[msg.Emoji] = newCount
 		}
 
-		// 注意：必须使用 Select("ReactionCounts") 或者 Save，确保 GORM 知道要更新这个字段
-		// 使用 UpdateColumn 可以避免更新 UpdatedAt 时间戳（如果你不想让点赞刷新修改时间）
 		if err := tx.Model(&note).Update("reaction_counts", note.ReactionCounts).Error; err != nil {
 			return err
 		}
@@ -280,6 +281,7 @@ func (c *Consumer) consumeAITasks() {
 		return
 	}
 
+	sem := make(chan struct{}, 5)
 	zap.L().Info("Waiting for AI tasks...")
 
 	for d := range msgs {
@@ -288,39 +290,61 @@ func (c *Consumer) consumeAITasks() {
 			continue
 		}
 
-		zap.L().Info("Processing AI task", zap.Uint("note_id", msg.NoteID), zap.String("task", msg.Task))
+		sem <- struct{}{}
+		go func(taskMsg models.AITaskMsg) {
+			defer func() { <-sem }()
+			zap.L().Info("Processing AI task", zap.Uint("note_id", msg.NoteID), zap.String("task", msg.Task))
 
-		var note models.Note
-		if err := c.db.First(&note, msg.NoteID).Error; err != nil {
-			zap.L().Error("Note not found", zap.Uint("id", msg.NoteID))
-			continue
-		}
-
-		// 2. 根据任务类型调用 AI
-		var updateMap = make(map[string]interface{})
-
-		if msg.Task == "generate_title" {
-			// 这里调用你在 Service 层写好的方法
-			newTitle, err := c.ai.GenerateTitle(note.Content)
-			if err == nil && newTitle != "" {
-				updateMap["title"] = newTitle
+			var note models.Note
+			if err := c.db.First(&note, msg.NoteID).Error; err != nil {
+				zap.L().Error("Note not found", zap.Uint("id", msg.NoteID))
+				return
 			}
-		} else if msg.Task == "generate_summary" {
-			summary, err := c.ai.GenerateSummary(note.Content)
-			if err == nil && summary != "" {
-				updateMap["summary"] = summary
-			}
-		}
 
-		if len(updateMap) > 0 {
-			if err := c.db.Model(&note).Updates(updateMap).Error; err != nil {
-				zap.L().Error("Failed to update note with AI result", zap.Error(err))
-			} else {
-				zap.L().Info("AI Update success", zap.Uint("note_id", note.ID))
+			var updateMap = make(map[string]interface{})
+			titleChanged := false
 
-				cacheKey := fmt.Sprintf("note:%d", note.ID)
-				_ = c.cache.Del(context.Background(), cacheKey)
+			if msg.Task == "generate_title" {
+				newTitle, err := c.ai.GenerateTitle(note.Content)
+				if err == nil && newTitle != "" {
+					updateMap["title"] = newTitle
+					note.Title = newTitle
+					titleChanged = true
+				} else {
+					zap.L().Warn("AI generate title failed or empty", zap.Error(err))
+				}
+			} else if msg.Task == "generate_summary" {
+				summary, err := c.ai.GenerateSummary(note.Content)
+				if err == nil && summary != "" {
+					updateMap["summary"] = summary
+				} else {
+					zap.L().Warn("AI generate summary failed", zap.Error(err))
+				}
 			}
-		}
+
+			if len(updateMap) > 0 {
+				if err := c.db.Model(&note).Updates(updateMap).Error; err != nil {
+					zap.L().Error("Failed to update note with AI result", zap.Error(err))
+					return
+				}
+
+				zap.L().Info("AI Update success", zap.Uint("nid", note.ID))
+
+				ctx := context.Background()
+				_ = c.cache.Del(ctx, fmt.Sprintf("note:%d", note.ID))
+				_ = c.cache.ClearCacheByPattern(ctx, c.cache, fmt.Sprintf("notes:user:%d*", note.UserID))
+
+				if titleChanged {
+					textToEmbed := fmt.Sprintf("%s\n%s", note.Title, note.Content)
+					vec, err := c.ai.GetEmbedding(textToEmbed)
+					if err == nil {
+						_ = c.qdrant.Upsert(ctx, note.ID, vec, note.UserID, note.IsPrivate)
+						zap.L().Info("Qdrant index updated for AI title", zap.Uint("nid", note.ID))
+					} else {
+						zap.L().Error("Failed to update embedding for AI title", zap.Error(err))
+					}
+				}
+			}
+		}(msg)
 	}
 }
