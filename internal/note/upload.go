@@ -4,10 +4,18 @@ import (
 	"fmt"
 	"note/internal/utils"
 	"path/filepath"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
+
+var allowedImages = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
+}
 
 func (h *NoteHandler) UploadImage(c *gin.Context) {
 	// 1. 获取上传的文件
@@ -18,19 +26,32 @@ func (h *NoteHandler) UploadImage(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// 2. 生成唯一文件名 (防止重名覆盖)
-	// 例如: uuid.jpg 或 timestamp_filename.jpg
-	ext := filepath.Ext(header.Filename)
-	newFileName := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
-
-	// 3. 上传到 MinIO
-	url, err := h.storageService.UploadImage(c, newFileName, header.Size, file, header.Header.Get("Content-Type"))
-	if err != nil {
-		utils.Error(c, 500, "图片上传失败")
+	const MaxFileSize = 5 * 1024 * 1024
+	if header.Size > MaxFileSize {
+		utils.Error(c, 400, "图片不能超过 5MB")
 		return
 	}
 
-	// 4. 返回 URL 给前端
-	// 前端拿到这个 URL 后，把它塞到笔记的 content 里，或者作为 cover_image 字段传给 CreateNote
+	contentType := header.Header.Get("Content-Type")
+	if !allowedImages[contentType] {
+		utils.Error(c, 400, "不支持的图片格式")
+		return
+	}
+
+	// 使用 UUID 生成文件名
+	ext := filepath.Ext(header.Filename)
+	if ext == "" {
+		ext = ".jpg"
+	}
+	// 生成类似 "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11.jpg"
+	newFileName := fmt.Sprintf("%s%s", uuid.New().String(), ext)
+
+	url, err := h.storageService.UploadImage(c, newFileName, header.Size, file, contentType)
+	if err != nil {
+		zap.L().Error("MinIO upload failed", zap.Error(err))
+		utils.Error(c, 500, "图片上传服务繁忙")
+		return
+	}
+
 	utils.Success(c, gin.H{"url": url})
 }
