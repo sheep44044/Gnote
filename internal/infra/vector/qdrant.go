@@ -53,7 +53,7 @@ func (s *QdrantService) ensureCollection() {
 		err := s.client.CreateCollection(ctx, &qdrant.CreateCollection{
 			CollectionName: s.col,
 			VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
-				Size:     1024,
+				Size:     2048,
 				Distance: qdrant.Distance_Cosine,
 			}),
 		})

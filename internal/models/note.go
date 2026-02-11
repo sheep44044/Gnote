@@ -14,7 +14,7 @@ type Note struct {
 	IsPinned       bool           `gorm:"default:false;index"`
 	IsFavorite     bool           `gorm:"default:false;index"`
 	FavoriteCount  int            `gorm:"default:0"`
-	ReactionCounts map[string]int `json:"reaction_counts" gorm:"serializer:json;default:{}"`
+	ReactionCounts map[string]int `gorm:"serializer:json;default:'{}'" json:"reaction_counts"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`

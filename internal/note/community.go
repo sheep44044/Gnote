@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func (h *NoteHandler) ListPublicNotes(c *gin.Context) {
@@ -25,7 +26,7 @@ func (h *NoteHandler) ListPublicNotes(c *gin.Context) {
 
 	sortBy := c.DefaultQuery("sort", "time") // time / popular
 
-	query := h.svc.DB.Where("is_private = ?", false)
+	query := h.svc.DB.Model(&models.Note{}).Where("is_private = ?", false)
 
 	switch sortBy {
 	case "popular":
@@ -36,7 +37,11 @@ func (h *NoteHandler) ListPublicNotes(c *gin.Context) {
 
 	// 4. 获取总数，用于前端分页显示
 	var total int64
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		zap.L().Error("count public notes failed", zap.Error(err))
+		utils.Error(c, http.StatusInternalServerError, "系统繁忙")
+		return
+	}
 
 	var notes []models.Note
 	if err := query.Limit(limit).Offset((page - 1) * limit).Find(&notes).Error; err != nil {
@@ -49,11 +54,16 @@ func (h *NoteHandler) ListPublicNotes(c *gin.Context) {
 		noteIDs[i] = n.ID
 	}
 
-	var favorites []models.Favorite
-	h.svc.DB.Where("user_id = ? AND note_id IN ?", userID, noteIDs).Find(&favorites)
 	favSet := make(map[uint]bool)
-	for _, f := range favorites {
-		favSet[f.NoteID] = true
+	if len(noteIDs) > 0 {
+		var favorites []models.Favorite
+		if err := h.svc.DB.Where("user_id = ? AND note_id IN ?", userID, noteIDs).Find(&favorites).Error; err != nil {
+			zap.L().Error("find favorites failed", zap.Error(err))
+		} else {
+			for _, f := range favorites {
+				favSet[f.NoteID] = true
+			}
+		}
 	}
 
 	type NoteDTO struct {
@@ -77,7 +87,7 @@ func (h *NoteHandler) ListPublicNotes(c *gin.Context) {
 		}
 	}
 
-	utils.Success(c, gin.H{"notes": result, "page": page})
+	utils.Success(c, gin.H{"notes": result, "page": page, "total": total})
 }
 
 /*非常非常高级的游标分页版，不过我还没搞懂，先封存在这

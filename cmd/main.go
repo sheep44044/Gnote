@@ -61,7 +61,7 @@ func main() {
 			users.POST("/logout", userHandler.Logout)
 			users.POST("/change-password", userHandler.ModifyPassword)
 
-			users.GET("/me", userHandler.PersonalPage)
+			users.GET("/:id", userHandler.PersonalPage)
 			users.PUT("/me", userHandler.UpdateMyProfile)
 
 			users.POST("/:id/follow", userHandler.FollowUser)

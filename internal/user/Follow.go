@@ -128,13 +128,32 @@ func (h *UserHandler) UnfollowUser(c *gin.Context) {
 }
 
 func (h *UserHandler) GetFollowingList(c *gin.Context) {
-	targetID := c.Param("id")
+	viewerID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "请先登录")
+		return
+	}
+
+	param := c.Param("id")
+	var targetID uint
+
+	if param == "me" {
+		targetID = viewerID
+	} else {
+		idUint64, err := strconv.ParseUint(param, 10, 64)
+		if err != nil {
+			utils.Error(c, http.StatusBadRequest, "无效的用户ID")
+			return
+		}
+		targetID = uint(idUint64)
+	}
+
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
 	offset := (page - 1) * size
 
 	var users []models.UserBrief
-	err := h.svc.DB.Table("users").
+	err = h.svc.DB.Table("users").
 		Select("users.id, users.username, users.avatar, users.bio").
 		Joins("JOIN user_follows ON users.id = user_follows.followed_id").
 		Where("user_follows.follower_id = ?", targetID).
@@ -151,14 +170,33 @@ func (h *UserHandler) GetFollowingList(c *gin.Context) {
 }
 
 func (h *UserHandler) GetFollowersList(c *gin.Context) {
-	targetID := c.Param("id")
+	viewerID, err := utils.GetUserID(c)
+	if err != nil {
+		utils.Error(c, http.StatusUnauthorized, "请先登录")
+		return
+	}
+
+	param := c.Param("id")
+	var targetID uint
+
+	if param == "me" {
+		targetID = viewerID
+	} else {
+		idUint64, err := strconv.ParseUint(param, 10, 64)
+		if err != nil {
+			utils.Error(c, http.StatusBadRequest, "无效的用户ID")
+			return
+		}
+		targetID = uint(idUint64)
+	}
+
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
 	offset := (page - 1) * size
 
 	var users []models.UserBrief
 
-	err := h.svc.DB.Table("users").
+	err = h.svc.DB.Table("users").
 		Select("users.id, users.username, users.avatar, users.bio").
 		Joins("JOIN user_follows ON users.id = user_follows.follower_id").
 		Where("user_follows.followed_id = ?", targetID).
