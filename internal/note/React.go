@@ -30,7 +30,7 @@ func (h *NoteHandler) ReactToNote(c *gin.Context) {
 
 	// 校验 emoji（简单白名单）
 	validEmojis := map[string]bool{
-		"❤️": true, "👍": true, "🔥": true, "👏": true, "😂": true, "😮": true,
+		"❤️": true, "👍": true, "🔥": true, "👏": true, "😂": true, "😮": true, "😢": true, "🎉": true, "👀": true,
 	}
 	if !validEmojis[input.Emoji] {
 		utils.Error(c, http.StatusBadRequest, "不支持的 emoji")
