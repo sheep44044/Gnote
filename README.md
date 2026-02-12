@@ -43,12 +43,17 @@ make infra
 
 ### 4. 运行应用
 
-启动后端服务:在 http://localhost:8080
+启动后端服务:
+
+http://localhost:8080
 
 ```Bash
 make backend
 ```
-启动前端服务:在 http://localhost:5173
+
+启动前端服务:
+
+http://localhost:5173
 
 ```Bash
 make frontend
@@ -71,7 +76,6 @@ Gnote 是一个基于 Gin + React 的现代化全栈 AI 笔记/知识库系统�
 
 ## 项目结构
 ```text
-.
 ├── cmd/                # 程序入口
 │   └── main.go         # 主程序启动文件
 ├── config/             # 配置加载模块
